@@ -1,0 +1,844 @@
+\documentclass[a4paper,12pt,twoside]{article}
+\usepackage[ngerman]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{ulem}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage{siunitx}
+
+\geometry{
+  a4paper, 
+  left=3cm,
+  right=3cm,
+  top=2cm,
+  bottom=2cm
+}
+
+% Farben für Code
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{keyword}{RGB}{0,0,180}
+\definecolor{comment}{RGB}{0,128,0}
+\definecolor{string}{RGB}{163,21,21}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{keyword}\bfseries,
+  commentstyle=\color{comment},
+  stringstyle=\color{string},
+  numbers=left,
+  numberstyle=\tiny,
+  breaklines=true,
+  frame=single,
+  showstringspaces=false,
+  tabsize=4
+}
+
+% Titelseite
+\title{Raspberry Pi Pico C/C++
+       RP2040}
+\author{Tobi}
+\date{\today}
+
+% Kopf und Fußzeilen
+\pagestyle{fancy}
+\fancyhf{} % Kopf- und Fußzeilen leeren
+\fancyfoot[C]{\thepage} % Seitenzahl zentriert in der Fußzeile
+\fancyhead[LE, RO]{\title}
+\fancyhead[LO, RE]{\author}
+
+
+\begin{document}
+
+% Titelseite
+\maketitle
+\thispagestyle{empty} % Keine Kopf-/Fußzeile auf der Titelseite
+\newpage
+
+% Inhaltsverzeichnis
+\tableofcontents
+\newpage
+
+% Beispielkapitel
+\section{Einleitung}
+Raspberry Pi Pico rp2040 Chip. Ist eine von der Raspberry Comunity entwickelter Prozessor.
+Es gibt auch eine W Variante, dieses hat einen WLan Chip integriert.
+Der Prozessor hat zwei Kerne, die separat programmiert werden können.
+Hier beziehe ich mich auf die programmierung mit C/C++.
+Es ist auch möglich mit Assembler und einer Art von Python den Pico zu programmieren.
+\section{Ausführen}
+Folgende Schritte werden benötig um den Pico mit einer Software zu flashen.
+Auf github.com gibt es eine bash Datei von mir, pico.sh.
+Dieses Datei versucht die datei.c zu kompilierern und die datei.uf2 zu erzeugen.
+Es gibt eine weiter Datei in meiner github, flash.sh. Dieses bash falsht die Software auf den Pico.
+\begin{itemize}
+	\item datei.c schreiben
+	\item CmakeLists.txt erstellen
+	\item \verb|pico_sdk_import.cmake| in das Projektverzeichnis kopieren
+	\item build Verzeichnis erstellen
+	\item in build wechseln
+	\item cmake .. ausführen
+	\item make ausführen
+	\item Pico in Bootloader starten
+	      \begin{itemize}
+		      \item Pico spannungsfrei schalten
+		      \item Taster auf PCB gedrückt halten
+		      \item Pico wieder einschalten
+		      \item Pico sollte nun als sdb zu finden sein
+	      \end{itemize}
+	\item cp datei.uf2 /sdb/..../RPI-RP2
+\end{itemize}
+\subsection{CMakeLists.txt}
+Hier ist eine "Universelle" CMakeLists.txt.
+In ihr muss der Dateinamen noch geändert und die Bibliotheken hinzugefügt.
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+cmake_minimum_required(VERSION 3.13)
+
+# Automatisch den SDK-Pfad setzen (falls nicht gesetzt)
+if(NOT DEFINED PICO_SDK_PATH)
+    set(PICO_SDK_PATH "$ENV{SDK_PATH}")
+endif()
+
+if(NOT EXISTS "${PICO_SDK_PATH}")
+    message(FATAL_ERROR "PICO_SDK_PATH ist nicht gesetzt oder ungueltig!")
+endif()
+
+include(pico_sdk_import.cmake)
+
+# Projektname setzen
+project(multi C CXX ASM)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
+pico_sdk_init()
+
+# Alle C- und C++-Dateien automatisch erkennen
+file(GLOB SRC_FILES *.c *.cpp)
+
+add_executable(${PROJECT_NAME} ${SRC_FILES})
+
+# Bibliotheken automatisch einbinden
+target_link_libraries(${PROJECT_NAME}
+    pico_multicore
+    pico_stdlib
+    hardware_pio
+)
+
+# Falls USB genutzt wird
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/usb.c" OR EXISTS "${CMAKE_CURRENT_LIST_DIR}/usb.cpp")
+    target_link_libraries(${PROJECT_NAME} tinyusb_device tinyusb_host)
+endif()
+
+# Falls Floating Point-Unterstuetzung benoetigt wird
+target_link_libraries(${PROJECT_NAME} pico_float pico_double)
+
+# Falls C++ Standardbibliothek genutzt wird
+if(CMAKE_CXX_COMPILER)
+    target_link_libraries(${PROJECT_NAME} pico_standard_link)
+endif()
+
+# USB- oder UART-Standardausgabe aktivieren
+pico_enable_stdio_usb(${PROJECT_NAME} 1)
+pico_enable_stdio_uart(${PROJECT_NAME} 0)
+
+# Extra-Ausgaben fuer Flash
+pico_add_extra_outputs(${PROJECT_NAME})
+
+# Generiere PIO-Header fuer gefundene .pio-Dateien
+file(GLOB PIO_FILES *.pio)
+foreach(pio_file ${PIO_FILES})
+    pico_generate_pio_header(${PROJECT_NAME} ${pio_file})
+endforeach()
+	  \end{lstlisting}
+	\end{minipage}
+\end{center}
+\section{Programmierung}
+\subsection{Bibliotheken}
+hier ein paar Links in denen man die meisten Bibliotheken anschauen lann.
+\paragraph{Pfade github.com}
+%\label{url:bib1}
+\small \protect\href{https://github.com/raspberrypi/pico-sdk/tree/master/src/rp2_common}{Quelle: github.com}
+\paragraph{Pfad lorenz-ruprecht.at}
+%\label{url:bib2}
+\small \protect\href{https://lorenz-ruprecht.at/docu/pico-sdk/1.4.0/html/group__hardware.html}{Quelle: lorenz-ruprecht.at}
+\paragraph{Home-Verzeichnis}
+%\label{url:bib3}
+\small \texttt{$~/pico-sdk/src/rp2_common/$}
+\section{Debugger}
+\subsection{Benötigte Hardware}
+Für das Debuggin wird eine Raspberry Pi Debug Probe benötigt.
+\subsection{Benötigte Programme}
+Es wird spezeill für eine Linux-System mit NeoVim beschrieben.
+\begin{itemize}
+	\item GDB
+	\item arm-none-eabi-gcc
+	\item amr-none-eabi-gdb
+	\item openocd
+	\item openocd-picoprobe
+\end{itemize}
+\subsection{OpenOCD}
+\verb|openocd -f interface/picoprobe.cfg -f target/rp2040.cfg|
+\verb|interface/picoprobe.cfg| Konfiguriert den Picoprobe-Adapter
+\verb|target/rp2040.cfg| Definiert den RP2040 Mikrocontroller
+\verb|Info : Listening on port 3333 for gdb connections| das sollte dann die
+\subsection{GDB im Terminal} \label{subsec:terminal}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{50mm} \= \kill
+	\>  \hspace{2mm}  starten des OpenOCD, Verbindung aufbauen \\
+	\> \verb|openocd -f interface/picoprobe.cfg -r target/rp2040.cfg| \\
+	\> \hspace{2mm} starten des GDB im Terminal \\
+	\> \verb|arm-none-eabi-gdb build/mein_projekt.elf| \\
+	\>  \hspace{2mm}verbinden von GDB mit OpenOCD \\
+	\> \verb|target remote localhost:3333| \\
+	\> \verb|load| \> laden des Programms auf den Pico \\
+	\> \verb|run| \> startet das Programm vom Anfang an \\
+	\> \verb|continue| \> führt bis zum nächsten Breakpoint weiter \\
+	\> \verb|step| \> führt die nächste Programmzeile aus \\
+	\> \verb|next| \> führt die nächste Programmzeile aus, keine Funktionen \\
+	\> \verb|finish| \> führt Funktion bis zum Ende aus \\
+	\> \verb|kill| \> beendet das aktuelle Programm \\
+	\> \verb|quit| \> verlässt GDB \\
+	\> \verb|break bunga| \> setzt Breakpoint bei der Funktion bunga \\
+	\> \verb|break datei.c:52| \> setzt Breakpoint bei der Zeile 52 \\
+	\> \verb|info breakpoints| \> listet alle Breakpoints auf \\
+	\> \verb|delete 4| \> löscht Breakpoint Nr. 4 \\
+	\> \verb|disable 2| \> deaktiviert Breakpoint Nr. 2 \\
+	\> \verb|enable 2| \> aktiviert Breakpoint Nr. 2 \\
+	\> \verb|print meine_variable| \> gibt Wert von \verb|meiner_variable| aus \\
+	\> \verb|print *pointer| \> gibt des Wert des Pointers aus \\
+	\> \verb|display meine_variable| \> zeigt den Wert der Variable bei jedem Stop \\
+	\> \verb|info locals| \> listet alle Variablen auf \\
+	\> \verb|info registers r0| \> Zeigt die Werte des Registers r0 \\
+	\> \verb|backtrace| \> zeigt den Call Stack an \\
+	\> \verb|frame 1| \> wechselt vom Frame 1 auf den backtrace \\
+	\> \verb|list bunga| \> zeigt Code um die \verb|bunga-Funktion| \\
+	\> \verb|set meine_variable = 32| \> setzt \verb|meine_variable| auf 32 \\
+	\> \verb|watch meine_variable| \> hält an wenn \verb|meine_variable| verändert wird \\
+	\> \verb|advance datei.c:50| \> führt das Programm bis Zeile 50 aus \\
+\end{tabbing}
+\subsection{GDB im NeoVim}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{50mm} \= \kill
+	\> \verb|:vs| \> öffnet ein neues Fenster \\
+	\> \verb|:term| \> öffnet das Terminal in NeoVim \\
+	\> \hspace{2mm}In diesem Terminal können dann alle Befehle aus \ref{subsec:terminal} verwendet werden. \\
+	\> \verb|:DapContinue| \> Startet oder führt das Programm weiter aus \\
+	\> \verb|:DapStepOver| \> führt nächste Zeile aus, ohne Funktionen \\
+	\> \verb|:DapStepInto| \> sprint in Funktion \\
+	\> \verb|:DapStepOut| \> verlässt die Funktion \\
+	\> \verb|:DapRestart| \> startet das Programm neu \\
+	\> \verb|:DapTerminate| \> beendet das Debugging \\
+	\> \verb|:DapToggleBreakpoint| \> setzt oder entfernt einen Breakpoint \\
+	\> \hspace{2mm}hält an wenn counter 5 ist \\
+	\> \verb|:DapSetBreakpoint counter == 5| \\
+	\> \verb|:DapClearBreakpoints| \> entfernt alle Breakpoints \\
+	\> \verb|:DapHover| \> zeigt den Wert der Variable unter dem Cursor \\
+	\> \verb|:DapScopes| \> öffnet ein Fenster mit den Variablen \\
+	\> \verb|:DapFrames| \> zeigt den Call Stack \\
+	\> \hspace{2mm}gibt alle Variablen im aktuellen Scope aus \\
+	\> \verb|:lua print(vim.inspect(dap.session().variables))| \\
+	\> \verb|:DapUiToggle| \> schalter UI ein oder aus \\
+\end{tabbing}
+\section{I/O}
+\subsection{Digital}
+\subsubsection{Eigenschaften}
+\begin{center}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		     & \textbf{Eingang} & \textbf{Ausgang} \\
+		\hline
+		\hline
+		high & $> 2,0V$         & $\approx 3,3V$   \\
+		\hline
+		low  & $< 0,8V$         & $\approx 0,0V$   \\
+		\hline
+	\end{tabular}
+\end{center}
+\subsubsection{Layout}
+\begin{itemize}
+	\item \textbf{GP0 - GP22}: 23 digitale GPIOs
+	\item \textbf{GP25}: Onboard-LED
+	\item \textbf{GP26 - GP28}: 3 analoge Pins (können auch digital genutzt werden)
+\end{itemize}
+\subsubsection{Bibliotheken}
+\verb|"pico/stdlib.h"| \\
+\verb|"hardware/gpio.h"| \\
+\subsubsection{Initialisierung und Konfiguration}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{80mm} \= \kill
+	\> \verb|const uint BUNGA = 2 | \> definiert BUNGA als Pin 2 \\
+	\> \verb|gpio_init(BUNGA);| \> definiert Bunga \\
+	\> \verb|gpio_set_dir(BUNGA, GPIO_OUT);| \> definiert Bunga als Ausgang \\
+	\> \verb|gpio_set_dir(BUNGA, GPIO_IN);| \> definiert Bunga als Eingang \\
+	\> \verb|gpio_set_pulls(BUNGA, true, false);| \> aktiviert pull up \\
+	\> \verb|gpio_set_pulls(BUNGA, false, true);| \> aktiviert pull down \\
+	\> \verb|gpio_set_pulls(BUNGA, false, false);| \> deaktiviert pull up/down \\
+	\> \verb|gpio_pull_up(BUNGA);| \> aktiviert pull up \\
+	\> \verb|gpio_pull_down(BUNGA);| \> aktiviert pull down \\
+	\> \verb|gpio_disable_pulls(BUNGA);| \> deaktiviert pull up/down \\
+	\> \verb|gpio_put(BUNGA, true);| \> schaltet Bunga auf high \\
+	\> \verb|gpio_put(BUNGA, false);| \> schaltet Bunga auf low \\
+	\> \verb|gpio_get(BUNGA);| \> liest Zustand von Bunga \\
+\end{tabbing}
+\subsubsection{Beispiel}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
+
+#define lampe1 18  // externe LED
+#define taster2 21  // Taster
+
+int main(){
+  gpio_init(lampe1);
+  gpio_init(taster2);
+
+  gpio_set_dir(lampe1, GPIO_OUT);
+  gpio_set_dir(taster2, GPIO_IN);
+
+  gpio_pull_up(taster2);
+  bool taster2_state = gpio_get(taster2);
+  gpio_put(lampe1, 1);   // lampe1 an
+}
+	  \end{lstlisting}
+	\end{minipage}
+\end{center}
+\subsection{Analog}
+\subsubsection{Eingang}
+\paragraph{Eigenschaften}
+\begin{center}
+	\begin{tabular}{|c|c|}
+		\hline
+		Eingang            &                     \\
+		\hline
+		\hline
+		Auflösung          & 12bit $(0-4095)$    \\
+		\hline
+		Eingangsspannung   & $0V bis 3,3V$       \\
+		\hline
+		Referenzspannung   & $3,3V$              \\
+		\hline
+		Eingangswiderstand & $\approx 1M \Omega$ \\
+		\hline
+		Sampling Rate      & max. $500kS/s$      \\
+		\hline
+		1 Kanal            & $500kS/s$           \\
+		\hline
+		2 Kanal            & $250kS/s$           \\
+		\hline
+		3 Kanal            & $166kS/s$           \\
+		\hline
+	\end{tabular}
+\end{center}
+\subsubsection{Layout}
+\begin{center}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		Name   & Pin    & Bezeichnung            \\
+		\hline
+		\hline
+		GPIO26 & Pin 31 & ADC 0 Eingang          \\
+		\hline
+		GPIO27 & Pin 32 & ADC 1 Eingang          \\
+		\hline
+		GPIO28 & Pin 34 & ADC 2 Eingang          \\
+		\hline
+		       &        & ADC 3 nicht verfügbar  \\
+		\hline
+		       &        & ADC 4 Temperaturfühler \\
+		\hline
+	\end{tabular}
+\end{center}
+\paragraph{Berechnung der Sample Rate}
+Jede Messung benötigt mindestes 96 Zyklen pro Sample \\
+\begin{align}
+	\text{Sample Rate} & = \frac{\text{ADC-Takt}}{\text{Zyklen pro Sample}} \\
+	                   & = \frac{48\,\text{MHz}}{96}                        \\
+	                   & = 500\,\text{kS/s}
+\end{align}
+\begin{align}
+	\text{Sample Rate} & = \frac{\text{ADC-Takt}}{\text{clkdiv} \times \text{Zyklen pro Sample}} \\
+	                   & = \frac{48\,\text{MHz}}{100 \ times 96}                                 \\
+	                   & = 5\,\text{kS/s}
+\end{align}
+\subsubsection{Bibliotheken}
+\verb|"pico/stdlib.h"| \\
+\verb|"hardware/adc.h"| \\
+\subsubsection{Initialisierung und Konfiguration}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{80mm} \= \kill
+	\> \verb|void asd_init(void)| \> initialisiert ADC Hardware \\
+	\> \verb|void adc_gpio_init(unit gpio)| \> initialisiert einen GPIO Pin \\
+	\> \verb|void adc_select_input(uint gpio)| \> wählt GPIO Pin als Messsignal \\
+	\> \verb|uint adc_get_selected_input(void)| \> aktuellen Wert einlesesn \\
+	\> \verb|void adc_set_round_robin(uint input_mask)| \\
+	\> \hspace{2mm}liest alle ADC ein \\
+	\> \verb|input_mask| \> 0b00000101 für ADC0 und ADC2 \\
+	\> \verb|void adc_set_temp_sensor_enabled(bool)| \> interner Temperaturfüheler aktivieren true/false \\
+	\> \verb|uint16_t adc_read(void)| \> liest ADC ein \\
+	\> \verb|void adc_run(bool)| \> "freier Lauf" der Messung true/false \\
+	\> \verb|void adc_set_clkdiv(float clkdiv)| \> setzt die Sampe Rate \\
+	\> \verb|void adc_fifo_setup(en, dreq_en, dreq_thresh, err_in_fifo, byte_shift)| \\
+	\> \verb|bool adc_fifo_is_empty(void)| \> rückgabe von true wenn fifo leer ist \\
+	\> \verb|uint8_t adc_fifo_get_level(void)| \> rückgabe der Anzahl von Einträgen \\
+	\> \verb|uint16_t adc_fifo_get_blocking(void)| \> wartet bis Daten in fifo \\
+	\> \verb|void adc_fifo_drain(void)| \> leert fifo wenn der letzte Zugriff beendet \\
+	\> \verb|void adc_irq_set_enabled(bool)| \> true/false von Interruprs \\
+\end{tabbing}
+\subsubsection{FIFO}
+FIFO steht für "First In, First Out" und ist eine Art Pufferspeicher für ADC Werte.
+Es können 4 x 12bit Werte gespeichert werden. Mit DMA "Direct Memory Access" können Messwerte,
+auch automatisch in einen Speicher übertragen werden ohne größe CPU Auslastung.
+\paragraph{adc\_fifo\_setup}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+adc_fifo_setup(
+  en,           // bool FIFO aktivieren 
+  dreq_en,      // bool DMA anfragen wenn Daten vorhanden
+  dreq_thresh,   // uint16_t DMA oder IRQ anfrage wenn erreicht
+  err_in_fifo,  // bool bit 15 ist das error flag fuer jedes Sample
+  byte_shift    // bool Fifo von 12bit auf 8bit fuer DMA
+);
+	  \end{lstlisting}
+	\end{minipage}
+\end{center}
+\subsubsection{Beispiel}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+#include <stdio.h>
+#include "pico/stdlib.h"
+#include "hardware/adc.h"
+
+int main() {
+    stdio_init_all();
+    
+    adc_init();  // ADC aktivieren
+    adc_gpio_init(26);  // GPIO26 (ADC0) aktivieren
+    adc_select_input(0);  // ADC-Kanal 0 waehlen (entspricht GPIO26)
+
+    while (1) {
+        uint16_t result = adc_read();  // 12-Bit-Wert (0 bis 4095)
+        float voltage = result * 3.3f / (1 << 12);  // Spannung berechnen
+        printf("ADC-Wert: %d, Spannung: %.2fV\n", result, voltage);
+        sleep_ms(1000);
+    }
+}
+	  \end{lstlisting}
+	\end{minipage}
+\end{center}
+\subsubsection{Temperaturfühler}
+\paragraph{Befehle}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{80mm} \= \kill
+	\> \verb|adc_init();| \> ADC wird aktiviert \\
+	\> \verb|adc_set_temp_sensor_enable(true);| \> aktiviert den Termperatursensor \\
+	\> \verb|adc_select_input(4);| \> wählt ADC4 \\
+	\> \verb|adc_read();| \> liest den ADC Wert (12bit 0 bis 4095) \\
+\end{tabbing}
+\paragraph{Berechnung}
+\begin{align}
+	\text{Spannung} & = \frac{\text{ADC-Wert}\times 3,3\text{V}}{\text{12bit}} \\
+	                & = \frac{\text{ADC}\times 3,3\text{V}}{4096}              \\
+\end{align}
+\begin{align}
+	\text{Temperatur} & = {27} - \frac{\text{Spannung}- \text{Ausgangsspannung bei 27*C}}{ \text{Temperaturdrift} } \\
+	                  & = {27} - \frac{\text{V}- 0,706}{0,001721}                                                   \\
+\end{align}
+\paragraph{Beispiel}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+#include <stdio.h>
+#include "pico/stdlib.h"
+#include "hardware/adc.h"
+
+int main() {
+		stdio_init_all();  // UART fuer die serielle Ausgabe initialisieren
+
+		adc_init();  // ADC aktivieren
+		adc_set_temp_sensor_enabled(true);  // Internen Temperatursensor aktivieren
+		adc_select_input(4);  // ADC4 ist der interne Temperatursensor
+
+		while (1) {
+				uint16_t raw = adc_read();  // 12-Bit-ADC-Wert auslesen (0 bis 4095)
+				float voltage = raw * 3.3f / (1 << 12);  // In Spannung umwandeln
+				float temperature = 27.0f - (voltage - 0.706f) / 0.001721f;  // Temperatur berechnen
+
+				printf("Temperatur: %.2f C\n", temperature);  // Ausgabe ueber UART
+				sleep_ms(1000);  // 1 Sekunde warten
+			}
+	}
+\end{lstlisting}
+	\end{minipage}
+\end{center}
+\subsubsection{Ausgang}
+\paragraph{Eigenschaften}
+Es gibt keine direkten Analogausgang, man muss über ein PWM Signal eine Spannung erzeugen.\\
+Am besten noch einen Kondensator dazwischen um den Mittelwert zu erhalten. \\
+Es gibt auch ein paar ICs die man über I2C oder SPI ansteuern kann die die Funktiin eines DAC haben. \\
+\begin{center}
+	\begin{tabular}{|c|c|}
+		\hline
+		Ausgang (PWM)      &                               \\
+		\hline
+		\hline
+		Auflösung          & 16bit $(0-65535)$             \\
+		\hline
+		Ausgangsspannung   & $0,0V bis 3,3V$               \\
+		\hline
+		Ausgangswiderstand & $30\Omega$ bis $50\Omega$     \\
+		\hline
+		Ausgangsstrom      & $12mA$ pro Kanal, max. $50mA$ \\
+		\hline
+	\end{tabular}
+\end{center}
+\paragraph{Berechnung Tiefpassfilter}
+Diese Berechnung dient dazu den Tiefpassfilter für das die Umwandlung des PWM zum DAC Signal. \\
+Am besten einen Widerstand in der Größenordnung von $460k\Omega$ bis $820k\Omega$ wählen. \\
+\paragraph{Formel}
+\begin{align}
+	C & = \frac{1}{2 \pi R f}
+\end{align}
+\begin{itemize}
+	\item \{ C \}: Kapazitaet in \si{\farad}
+	\item \{ R \}: Widerstand in \si{\ohm}
+	\item \{ f \}: PWM-Frequenz in \si{\hertz}
+\end{itemize}
+\begin{center}
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=1\textwidth]{/home/tobil/Documents/prog/pico/pic/pic4.png}
+		\caption{Tiefpassfilter}
+		\small \href{https://www.heise.de/hintergrund/Gaengige-Verfahren-zur-Digital-Analog-Wandlung-6363918.html?seite=2}{Bildquelle: heis.de}
+		%\label{fig:pic4}
+	\end{figure}
+\end{center}
+\subsubsection{Auflösung PWM}
+\begin{align}
+	\text{PWM-Frequenz} & = \frac{\text{Systemtakt}}{\text{Taktteiler} \times (\text{Zählgrenze} + 1)} \\
+	                    & = \frac{125\,000\,000}{4 \times (255 + 1)}                                   \\
+	                    & = 122{,}07\,\text{kHz}
+\end{align}
+\begin{center}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		Auflösung & Zählergrenze & PWM (bei 125MHz, \textbf{Teiler 1}) \\
+		\hline
+		\hline
+		8 bit     & 255+1        & 488,3kHz                            \\
+		\hline
+		10 bit    & 1023+1       & 122,1kHz                            \\
+		\hline
+		12 bit    & 4095+1       & 30,5kHz                             \\
+		\hline
+		16 bit    & 65535+1      & 1,9kHz                              \\
+		\hline
+	\end{tabular}
+	\\[10mm]
+	\begin{tabular}{|c|c|c|}
+		\hline
+		Auflösung & Zählergrenze & PWM (bei 125MHz, \textbf{Teiler 4}) \\
+		\hline
+		\hline
+		8 bit     & 255+1        & 122,1kHz                            \\
+		\hline
+		10 bit    & 1023+1       & 30,5kHz                             \\
+		\hline
+		12 bit    & 4095+1       & 7,6kHz                              \\
+		\hline
+		16 bit    & 65535+1      & 0,48kHz                             \\
+		\hline
+	\end{tabular}
+	\\[10mm]
+	\begin{tabular}{|c|c|c|}
+		\hline
+		Auflösung & Zählergrenze & PWM (bei 125MHz, \textbf{Teiler 100}) \\
+		\hline
+		\hline
+		8 bit     & 255+1        & 4,9kHz                                \\
+		\hline
+		10 bit    & 1023+1       & 1,2kHz                                \\
+		\hline
+		12 bit    & 4095+1       & 0,31kHz                               \\
+		\hline
+		16 bit    & 65535+1      & 0,02kHz                               \\
+		\hline
+	\end{tabular}
+	\\[10mm]
+	\begin{tabular}{|c|c|c|}
+		\hline
+		Auflösung & Zählergrenze & PWM (bei 125MHz, \textbf{Teiler 255}) \\
+		\hline
+		\hline
+		8 bit     & 255+1        & 1914,8Hz                              \\
+		\hline
+		10 bit    & 1023+1       & 478,7Hz                               \\
+		\hline
+		12 bit    & 4095+1       & 119,6Hz                               \\
+		\hline
+		16 bit    & 65535+1      & 7,5Hz                                 \\
+		\hline
+	\end{tabular}
+\end{center}
+\paragraph{Layout}
+siehe \ref{subsec:terminal}
+\subsubsection{Bibliotheken}
+\verb|"pico/stdlib.h"| \\
+\verb|"hardware/pwn.h"| \\
+\small \href{https://github.com/raspberrypi/pico-sdk/blob/master/src/rp2_common/hardware_pwm/include/hardware/pwm.h}{github.com pwm.h}
+\subsubsection{Initialisierung und Konfiguration}
+\begin{tabbing}
+	\hspace{5mm} \= \hspace{80mm} \= \kill
+	\> \verb|uint pwm_gpio_to_slice_num(uint gpio)| \> gibt den Slice des GPIO zurück \\
+	\> \verb|uint pwm_gpio_to_channel(uint gpio)| \> gibt den Kanal des GPIO zurück \\
+	\> \verb|void pwm_config_set_phase_correct(pwm_config *c, float div)| \\
+	\> \hspace{2mm} set phase correction in a PWM configuration \\
+	\> \verb|void pwm_config_set_clkdiv(pwm_config *c, float div| \\
+	\> \hspace{2mm} set PWM clock divider in a PWM configuration \\
+	\> \verb|void pwm_config_set_clkdiv_int_fac(pwm_config *c, uint8_t integer, uint8_t fract)| \\
+	\>  \hspace{2mm} set PWM clock divider in a PWM configuration usidn a 8:4 fractional value \\
+	\> \verb|void pwm_config_set_clkdiv_int(pwm_config *c, uint div)| \\
+	\>  \hspace{2mm} set PWM clock divider in a PWM configuration \\
+	\> \verb|void pwm_config_set_clkdiv_mode(pwm_config *c, enum pwm_clkdiv_mode mode)| \\
+	\>  \hspace{2mm} set PWM counting mode in a PWM configuration \\
+	\> \verb|void pwm_condig_set_output_polarity(pwm_config *c, bool a, bool b)| \\
+	\>  \hspace{2mm} set output polarity in a PWM configuration \\
+	\> \verb|void pwm_config_set_wrap(pwm_config *c, uint16_t wrap)| \\
+	\>  \hspace{2mm} set PWM counter wrap value in a PWM configuration \\
+	\> \verb|void pwm_init(uint slice_num, pwm_config *c, bool start)| \\
+	\>  \hspace{2mm} initialise a PWM with settings from a configuration object \\
+	\> \verb|pwm_config pwm_get_default_config(void)| \> standart Werte für eine PWM Konfiguration \\
+	\> \verb|void pwm_set_wrap(uint slice_num, uint16_t wrap)| \> setzt den aktuellen PWM Zähler \\
+	\> \verb|void pwm_set_chan_level(uint slice_num, uint chan, uint16_t level)| \\
+	\>  \hspace{2mm} set the current PWM counter compare value for one channel A or B\\
+	\> \verb|void pwm_set_both_levels(uint slice_num, uint16_t level_a, uint16_t level_b)| \\
+	\>  \hspace{2mm} set PWM counter compare values \\
+	\> \verb|void pwm_set_gpio_level(uint gpio, uint16_t level)| \\
+	\>  \hspace{2mm} helper function to set the PWM level for the slice and channel associated with a GPIO \\
+	\> \verb|uint16_t pwm_get_counter(uint slice_num)| \> aktuellen Wert des PWM Zähler \\
+	\> \verb|void pwm_set_counter(uint slice_num)| \> setzte den PWM Zähler \\
+	\> \verb|void pwm_advance_counter(uint slice_num)| \> advance the phase of a running counter by 1 \\
+	\> \verb|void pwm_retard_count(uint slice_num)| \> retard the phase of a running counter by 1 \\
+	\> \verb|void pwm_set_clkdiv_int_fra(uint slice_num, uint8_t integer, uint8_t frac)| \\
+	\>  \hspace{2mm} set PWM clock divider using an 8:4 fraction value \\
+	\> \verb|void pwm_set_clkdiv(uint slice_num, float divider)| \> setzt Teiler \\
+	\> \verb|void pwm_set_output_polarity(uint slice_num, bool a, bool b)| \\
+	\>  \hspace{2mm} setzt die Polarität des Ausgangs \\
+	\> \verb|void pwm_set_clkdiv_mode(uint slice_num, enum pwm_clkdiv_mode mode)| \\
+	\>  \hspace{2mm} setzt den PWM Teiler-Modus \\
+	\> \verb|void pwm_set_phase_correct(uint slice_num, bool phase_correct)| \\
+	\>  \hspace{2mm} setzt den Phasen Korrekturwert \\
+	\> \verb|void pwm_set_enabled(uint slice_num, bool eanabled)| \\
+	\>  \hspace{2mm} aktiviert/deaktiviert PWM Ausgang \\
+	\> \verb|void pwm_set_mask_enabled(uint32_t mask)| \\
+	\>  \hspace{2mm} aktiviert/deaktiviert mehrere PWM Ausgänge \\
+	\> \verb|void pwm_set_irq_enabled(uint slice_num, bool enabled)| \\
+	\>  \hspace{2mm} aktiviert/deaktiviert den Interrupt eines PWM Slice \\
+	\> \verb|void pwm_set_irq_mask_enabled(uint32_t slice_mask, bool enabled)| \\
+	\>  \hspace{2mm} aktiviert/deaktiviert mehrere Interrupts von PWM Slices \\
+	\> \verb|void pwm_clear_irq(uint slice_num)| \> setzt einen Interrupt zurück \\
+	\> \verb|uint32_t pwm_get_irq_status_mask(void)| \> liest den Interrupt aus \\
+	\> \verb|void pwm_force_irq(uint slice_num)| \> setzt eine Interrupt \\
+	\> \verb|uint pwm_get_dreq(uint slice_num)| \\
+	\>  \hspace{2mm} Return the DREQ to use for pacing transfers to a particular PWM slice \\
+\end{tabbing}
+\subsubsection{Beispiel}
+		\paragraph{pwm\_config}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+    \\ Standard PWM Konfiguration laden
+    pwm_config bunga = pwm_get_default_config();
+
+    \\ Teiler definieren 4.0f fuer float
+    pwm_config_set_clkdiv(&bunga, 4.0f);
+
+    \\ max Zaehler definieren
+    pwm_config_set_wrap(&bunga, 1023);
+
+    \\ config laden
+    pwm_init(slice_num, &bunga, true);
+    \end{lstlisting}
+		%\label{prog:pwm_config}
+	\end{minipage}
+\end{center}
+	\paragraph{kleinPWM}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+#include "pico/stdlib.h"
+#include "hardware/pwm.h"
+
+int main() {
+    gpio_set_function(16, GPIO_FUNC_PWM);  // GPIO16 als PWM-Ausgang setzen
+    uint slice_num = pwm_gpio_to_slice_num(16);  // Slice-Nummer fuer GPIO16 holen
+
+    pwm_set_wrap(slice_num, 255);  // Wrap-Wert setzen (Zaehlgrenze = 255)
+    pwm_set_clkdiv(slice_num, 4.0);  // Taktteiler = 4.0 (125 MHz / 4)
+    pwm_set_chan_level(slice_num, PWM_CHAN_A, 128);  // 50% Duty Cycle (128 / 255)
+    
+    pwm_set_enabled(slice_num, true);  // PWM aktivieren
+
+    while (1) {
+        sleep_ms(1000);
+    }
+}
+
+    \end{lstlisting}
+		%\label{prog:kleinPWM}
+	\end{minipage}
+\end{center}
+		\paragraph{großPWM}
+\begin{center}
+	\begin{minipage}{1.0\textwidth}
+		\begin{lstlisting}[language=C]
+    #include "pico/stdlib.h"
+#include "hardware/pwm.h"
+
+int main() {
+    // Zwei GPIO-Pins fuer PWM (z. B. GPIO 14 und GPIO 15)
+    uint pin1 = 14; // Slice 7, Kanal A
+    uint pin2 = 15; // Slice 7, Kanal B
+
+    // Zuordnung zu PWM-Slices
+    uint slice_num1 = pwm_gpio_to_slice_num(pin1);
+    uint slice_num2 = pwm_gpio_to_slice_num(pin2); // Wird dasselbe Slice sein, da 14 und 15 zu Slice 7 gehoeren
+
+    // Zwei benannte pwm_config-Instanzen erstellen
+    pwm_config config_slow = pwm_get_default_config(); // Fuer langsames Blinken
+    pwm_config config_fast = pwm_get_default_config(); // Fuer schnelles Blinken
+
+    // Konfiguration fuer langsames Blinken (niedrige Frequenz)
+    pwm_config_set_clkdiv(&config_slow, 100.0f);  // Systemclock / 100 = 1.25 MHz
+    pwm_config_set_wrap(&config_slow, 1249);      // Frequenz = 1.25 MHz / 1250 = 1 kHz
+    pwm_config_set_phase_correct(&config_slow, false);
+
+    // Konfiguration fuer schnelles Blinken (hoehere Frequenz)
+    pwm_config_set_clkdiv(&config_fast, 4.0f);    // Systemclock / 4 = 31.25 MHz
+    pwm_config_set_wrap(&config_fast, 624);       // Frequenz = 31.25 MHz / 625 = 50 kHz
+    pwm_config_set_phase_correct(&config_fast, false);
+
+    // GPIO-Pins als PWM konfigurieren
+    gpio_set_function(pin1, GPIO_FUNC_PWM);
+    gpio_set_function(pin2, GPIO_FUNC_PWM);
+
+    // Initialisiere die PWM-Slices mit den benannten Konfigurationen
+    pwm_init(slice_num1, &config_slow, false); // Slice 7 mit langsamer Konfig
+    pwm_init(slice_num2, &config_fast, false); // Dasselbe Slice, wird ueberschrieben (siehe Hinweis unten)
+
+    // Setze unterschiedliche Duty Cycles
+    pwm_set_gpio_level(pin1, 625);  // 50% Duty Cycle fuer pin1
+    pwm_set_gpio_level(pin2, 312);  // 50% Duty Cycle fuer pin2 (angepasst an Wrap-Wert von config_fast)
+
+    // Starte beide PWM-Slices
+    pwm_set_enabled(slice_num1, true);
+
+    while (true) {
+        // Endlosschleife, PWM laeuft weiter
+        sleep_ms(1000);
+    }
+
+    return 0;
+}
+    \end{lstlisting}
+		%\label{prog:großPWM}
+	\end{minipage}
+\end{center}
+\subsection{Layout}
+\begin{center}
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=1\textwidth]{/home/tobil/Documents/prog/pico/pic/pic3.png}
+		\caption{Raspberry Pi Pico Layout}
+		\small \href{https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html}{Bildquelle: raspberry.com}
+		%\label{fig:pic3}
+	\end{figure}
+\end{center}
+\newpage
+\begin{center}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{|c|*{9}{c|}}
+			\hline
+			\textbf{GPIO} & \textbf{F1} & \textbf{F2} & \textbf{F3} & \textbf{F4} & \textbf{F5} & \textbf{F6} & \textbf{F7} & \textbf{F8}  & \textbf{F9}   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{0}    & SPI0 RX     & UART0 TX    & I2C0 SDA    & PWM0 A      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{1}    & SPI0 CSn    & UART0 RX    & I2C0 SCL    & PWM0 B      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{2}    & SPI0 SCK    & UART0 CTS   & I2C1 SDA    & PWM1 A      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{3}    & SPI0 TX     & UART0 RTS   & I2C1 SCL    & PWM1 B      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{4}    & SPI0 RX     & UART1 TX    & I2C0 SDA    & PWM2 A      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{5}    & SPI0 CSn    & UART1 RX    & I2C0 SCL    & PWM2 B      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{6}    & SPI0 SCK    & UART1 CTS   & I2C1 SDA    & PWM3 A      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{7}    & SPI0 TX     & UART1 RTS   & I2C1 SCL    & PWM3 B      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{8}    & SPI1 RX     & UART1 TX    & I2C0 SDA    & PWM4 A      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{9}    & SPI1 CSn    & UART1 RX    & I2C0 SCL    & PWM4 B      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{10}   & SPI1 SCK    & UART1 CTS   & I2C1 SDA    & PWM5 A      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{11}   & SPI1 TX     & UART1 RTS   & I2C1 SCL    & PWM5 B      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{12}   & SPI1 RX     & UART0 TX    & I2C0 SDA    & PWM6 A      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{13}   & SPI1 CSn    & UART0 RX    & I2C0 SCL    & PWM6 B      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{14}   & SPI1 SCK    & UART0 CTS   & I2C1 SDA    & PWM7 A      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{15}   & SPI1 TX     & UART0 RTS   & I2C1 SCL    & PWM7 B      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{16}   & SPI1 RX     & UART0 TX    & I2C0 SDA    & PWM0 A      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{17}   & SPI0 CSn    & UART0 RX    & I2C0 SCL    & PWM0 B      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{18}   & SPI0 SCK    & UART0 CTS   & I2C1 SDA    & PWM1 A      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{19}   & SPI0 TX     & UART0 RTS   & I2C1 SCL    & PWM1 B      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{20}   & SPI0 RX     & UART1 TX    & I2C0 SDA    & PWM2 A      & SIO         & PIO0        & PIO1        & CLOCK GPIN0  & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{21}   & SPI0 CSn    & UART1 RX    & I2C0 SCL    & PWM2 B      & SIO         & PIO0        & PIO1        & CLOCK GPOUT0 & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{22}   & SPI0 SCK    & UART1 CTS   & I2C1 SDA    & PWM3 A      & SIO         & PIO0        & PIO1        & CLOCK GPIN1  & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{23}   & SPI0 TX     & UART1 RTS   & I2C1 SCL    & PWM3 B      & SIO         & PIO0        & PIO1        & CLOCK GPOUT1 & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{24}   & SPI1 RX     & UART1 TX    & I2C0 SDA    & PWM4 A      & SIO         & PIO0        & PIO1        & CLOCK GPOUT2 & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{25}   & SPI1 CSn    & UART1 RX    & I2C0 SCL    & PWM4 B      & SIO         & PIO0        & PIO1        & CLOCK GPOUT3 & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{26}   & SPI1 SCK    & UART1 CTS   & I2C1 SDA    & PWM5 A      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{27}   & SPI1 TX     & UART1 RTS   & I2C1 SCL    & PWM5 B      & SIO         & PIO0        & PIO1        &              & USB OVCUR DET \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{28}   & SPI1 RX     & UART0 TX    & I2C0 SDA    & PWM6 A      & SIO         & PIO0        & PIO1        &              & USB VBUS DET  \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+			\textbf{29}   & SPI1 CSn    & UART0 RX    & I2C0 SCL    & PWM6 B      & SIO         & PIO0        & PIO1        &              & USB VBUS EN   \\
+			              &             &             &             &             &             &             &             &              &               \\ \hline
+		\end{tabular}%
+	}
+	\captionof{table}{General Purpose Input/Output (GPIO) Bank 0 Functions}
+	\small \href{https://datasheets.raspberrypi.com/rp2040/rp2040-datasheet.pdf}{Quelle: datasheets.raspberry.com}
+	%\label{tabel:tab1}
+\end{center}
+\end{document}
